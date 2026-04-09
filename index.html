@@ -666,8 +666,6 @@
 
 <script>
 // ======================== QUESTION BANK ========================
-// DOK distribution: DOK1 ~10-15%, DOK2 ~65-70%, DOK3 ~20-25%
-// 30 items: ~4 DOK1, ~19 DOK2, ~7 DOK3
 const QUESTIONS = [
   // ===== ECOLOGY (27%) — ~8 questions =====
   {
@@ -1039,8 +1037,8 @@ const QUESTIONS = [
 let studentName = '';
 let studentPeriod = '';
 let currentQ = 0;
-let answers = {};       // qIndex → answer (number for SR, array for MS, object for DD)
-let vocabFlags = {};    // qIndex → true/false
+let answers = {};
+let vocabFlags = {};
 let timerInterval;
 let timeLeft = 50 * 60;
 
@@ -1083,12 +1081,10 @@ function renderQuestion(idx) {
   const q = QUESTIONS[idx];
   const container = document.getElementById('question-container');
 
-  // Progress
   const pct = ((idx + 1) / QUESTIONS.length) * 100;
   document.getElementById('progress-fill').style.width = pct + '%';
   document.getElementById('q-counter').textContent = `Question ${idx + 1} of ${QUESTIONS.length}`;
 
-  // Domain color
   const domainClass = {Ecology:'Ecology', Genetics:'Genetics', Cells:'Cells', Evolution:'Evolution', Classification:'Classification'}[q.domain];
 
   let html = `
@@ -1109,7 +1105,6 @@ function renderQuestion(idx) {
     html += renderDD(q, idx);
   }
 
-  // Vocab flag
   const flagged = vocabFlags[idx] || false;
   html += `
     <div class="vocab-flag-section">
@@ -1122,12 +1117,11 @@ function renderQuestion(idx) {
 
   container.innerHTML = html;
 
-  // Restore DD state if needed
+  // Set up DD interactivity ONCE after innerHTML is set
   if (q.type === 'DD') {
     setupDD(q, idx);
   }
 
-  // Nav buttons
   document.getElementById('btn-prev').disabled = idx === 0;
   const isLast = idx === QUESTIONS.length - 1;
   const nextBtn = document.getElementById('btn-next');
@@ -1199,12 +1193,14 @@ function setupDD(q, idx) {
   const sourceEl = document.getElementById('dd-source-items');
 
   q.ddItems.forEach((item, ii) => {
-    const placed = saved[ii] !== undefined;
-    if (!placed) {
-      const el = createDDItem(item, ii, idx);
+    const placedTarget = saved[ii];
+    if (placedTarget === undefined) {
+      // Item goes in the source box
+      const el = createDDItem(item, ii, idx, false);
       sourceEl.appendChild(el);
     } else {
-      const targetEl = document.getElementById(`dd-placed-${saved[ii]}`);
+      // Item goes in the appropriate target box
+      const targetEl = document.getElementById(`dd-placed-${placedTarget}`);
       if (targetEl) {
         const el = createDDItem(item, ii, idx, true);
         targetEl.appendChild(el);
@@ -1213,7 +1209,7 @@ function setupDD(q, idx) {
   });
 }
 
-function createDDItem(text, ii, qidx, placed = false) {
+function createDDItem(text, ii, qidx, placed) {
   const el = document.createElement('div');
   el.className = `dd-item ${placed ? 'placed' : ''}`;
   el.draggable = true;
@@ -1226,21 +1222,23 @@ function createDDItem(text, ii, qidx, placed = false) {
     el.classList.add('dragging');
   });
   el.addEventListener('dragend', () => el.classList.remove('dragging'));
-  // Click to return to source
   if (placed) {
     el.style.cursor = 'pointer';
     el.title = 'Click to return to source';
     el.onclick = () => {
       if (!answers[qidx]) answers[qidx] = {};
       delete answers[qidx][ii];
+      // Re-render — setupDD is called inside renderQuestion, no second call needed
       renderQuestion(qidx);
-      setupDD(QUESTIONS[qidx], qidx);
     };
   }
   return el;
 }
 
-function ddOver(event) { event.preventDefault(); event.currentTarget.classList.add('drag-over'); }
+function ddOver(event) {
+  event.preventDefault();
+  event.currentTarget.classList.add('drag-over');
+}
 
 function ddDrop(event, qidx, ti) {
   event.preventDefault();
@@ -1248,8 +1246,8 @@ function ddDrop(event, qidx, ti) {
   const ii = parseInt(event.dataTransfer.getData('ii'));
   if (!answers[qidx]) answers[qidx] = {};
   answers[qidx][ii] = ti;
+  // Re-render — setupDD is called inside renderQuestion, no second call needed
   renderQuestion(qidx);
-  setupDD(QUESTIONS[qidx], qidx);
 }
 
 function toggleVocabFlag(idx) {
@@ -1313,7 +1311,6 @@ function scoreQuestion(q, idx) {
     for (const [ii, expectedTarget] of Object.entries(q.ddAnswers)) {
       if (a[ii] !== expectedTarget) { allCorrect = false; break; }
     }
-    // Check all items placed
     if (Object.keys(a).length < q.ddItems.length) allCorrect = false;
     return allCorrect ? 1 : 0;
   }
@@ -1331,7 +1328,6 @@ function getAchievementLevel(pct) {
 function submitTest() {
   clearInterval(timerInterval);
 
-  // Calculate scores
   let totalCorrect = 0;
   const domainScores = {};
   const domainTotals = {};
@@ -1348,7 +1344,6 @@ function submitTest() {
   const pct = Math.round((totalCorrect / QUESTIONS.length) * 100);
   const level = getAchievementLevel(pct);
 
-  // Build results payload
   const payload = {
     timestamp: new Date().toISOString(),
     studentName,
@@ -1367,22 +1362,18 @@ function submitTest() {
     timeUsed: (50 * 60 - timeLeft)
   };
 
-  // Render results screen
   showScreen('screen-results');
   document.getElementById('result-student-name').textContent = `${studentName} · ${studentPeriod}`;
 
-  // Achievement badge
   document.getElementById('achievement-badge-wrap').innerHTML =
     `<div class="achievement-badge level-${level}">⭐ ${level} Learner</div>`;
 
-  // Scores
   document.getElementById('score-display').innerHTML = `
     <div class="score-box"><div class="score-num">${totalCorrect}/${QUESTIONS.length}</div><div class="score-label">Total Score</div></div>
     <div class="score-box"><div class="score-num">${pct}%</div><div class="score-label">Percent Correct</div></div>
     <div class="score-box"><div class="score-num">${Math.round((50*60 - timeLeft)/60)} min</div><div class="score-label">Time Used</div></div>
   `;
 
-  // Domain bars
   const domainColors = { Ecology: '#2E7D32', Genetics: '#1565C0', Cells: '#007B83', Evolution: '#4A148C', Classification: '#BF360C' };
   const domainWeights = { Ecology: 27, Genetics: 23, Cells: 20, Evolution: 17, Classification: 13 };
   let domainHTML = '';
@@ -1398,7 +1389,6 @@ function submitTest() {
   });
   document.getElementById('domain-bars').innerHTML = domainHTML;
 
-  // Vocab flags
   const flagDiv = document.getElementById('vocab-flag-list');
   if (flaggedQs.length === 0) {
     flagDiv.innerHTML = '<div class="no-flags">No vocabulary flags were marked during this attempt.</div>';
@@ -1406,7 +1396,6 @@ function submitTest() {
     flagDiv.innerHTML = '<div class="flag-list">' + flaggedQs.map(f => `<span class="flag-chip">🗝 ${f}</span>`).join('') + '</div>';
   }
 
-  // Answer review
   let reviewHTML = '';
   QUESTIONS.forEach((q, i) => {
     const sc = scoreQuestion(q, i);
@@ -1420,7 +1409,6 @@ function submitTest() {
   });
   document.getElementById('review-list').innerHTML = reviewHTML;
 
-  // Submit to Google Apps Script
   submitToScript(payload);
 }
 
